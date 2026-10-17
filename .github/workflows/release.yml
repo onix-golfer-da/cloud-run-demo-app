@@ -1,0 +1,99 @@
+name: 'App Release & Publish'
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write # Required for Google WIF OIDC
+
+jobs:
+  release:
+    name: 'Build, Publish & Dispatch'
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: 'migration-lab-uak1'
+      REGION: 'us-central1'
+      GAR_REPO: 'cloud-run-apps'
+      IMAGE_NAME: 'cloud-run-demo-app'
+      IAC_REPO: 'onix-net/dalberto-lab'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          # Uses repository secret if defined, otherwise uses lab WIF provider
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER || 'projects/850361008497/locations/global/workloadIdentityPools/github-pool/providers/onix-net-cloud-run-demo-app' }}
+          service_account: ${{ secrets.GCP_SA_EMAIL || 'terraform-ci@migration-lab-uak1.iam.gserviceaccount.com' }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build and Push Docker Image
+        env:
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPO}/${IMAGE_NAME}"
+
+          echo "Building container image ${IMAGE_URI}:${IMAGE_TAG}..."
+          docker build \
+            --build-arg APP_VERSION="${IMAGE_TAG}" \
+            -t "${IMAGE_URI}:${IMAGE_TAG}" \
+            -t "${IMAGE_URI}:latest" .
+
+          echo "Pushing image to Google Artifact Registry..."
+          docker push "${IMAGE_URI}:${IMAGE_TAG}"
+          docker push "${IMAGE_URI}:latest"
+
+      - name: Publish Secrets to Secret Manager
+        env:
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
+          APP_VERSION: sha-${{ github.sha }}
+        run: |
+          chmod +x scripts/publish_secrets.sh
+          ./scripts/publish_secrets.sh
+
+      - name: Trigger IaC Repo Deployment PR
+        env:
+          GH_PAT: ${{ secrets.IAC_REPO_PAT }}
+          IMAGE_TAG: sha-${{ github.sha }}
+          IMAGE_URI: "${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPO }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+        run: |
+          if [ -z "${GH_PAT}" ]; then
+            echo "❌ Error: Secret IAC_REPO_PAT is not set. Please add a GitHub PAT to trigger the IaC repository."
+            exit 1
+          fi
+
+          COMMIT_TITLE=$(echo "${{ github.event.head_commit.message }}" | head -n 1 | jq -R -s .)
+
+          echo "Dispatching 'update-cloud-run-image' event to ${IAC_REPO}..."
+          curl -f -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_PAT}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${IAC_REPO}/dispatches \
+            -d @- <<EOF
+          {
+            "event_type": "update-cloud-run-image",
+            "client_payload": {
+              "image_tag": "${IMAGE_TAG}",
+              "image_uri": "${IMAGE_URI}",
+              "commit_sha": "${{ github.sha }}",
+              "commit_title": ${COMMIT_TITLE},
+              "author": "${{ github.actor }}"
+            }
+          }
+          EOF
+
+          echo "✓ Successfully dispatched event to ${IAC_REPO}"
