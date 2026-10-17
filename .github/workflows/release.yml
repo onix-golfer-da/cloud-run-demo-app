@@ -29,7 +29,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           # Uses repository secret if defined, otherwise uses lab WIF provider
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER || 'projects/850361008497/locations/global/workloadIdentityPools/github-pool/providers/onix-net-cloud-run-demo-app' }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER || 'projects/850361008497/locations/global/workloadIdentityPools/github-pool/providers/onix-golfer-cloud-run-app' }}
           service_account: ${{ secrets.GCP_SA_EMAIL || 'terraform-ci@migration-lab-uak1.iam.gserviceaccount.com' }}
 
       - name: Set up Cloud SDK
