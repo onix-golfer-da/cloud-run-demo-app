@@ -44,7 +44,7 @@ docker run -p 8080:8080 -e APP_ENV="docker-local" cloud-run-demo-app
 
 ## Initializing this as a Separate GitHub Repository
 
-To push this codebase to its own standalone GitHub repository `https://github.com/onix-net/cloud-run-demo-app`:
+To push this codebase to its own standalone GitHub repository `https://github.com/onix-golfer-da/cloud-run-demo-app`:
 
 ```bash
 # 1. From inside this folder:
@@ -56,7 +56,7 @@ git add .
 git commit -m "feat: initial commit of cloud-run-demo-app"
 
 # 3. Add remote (create the repo first on GitHub if not existing)
-git remote add origin https://github.com/onix-net/cloud-run-demo-app.git
+git remote add origin https://github.com/onix-golfer-da/cloud-run-demo-app.git
 
 # 4. Push to main
 git push -u origin main
